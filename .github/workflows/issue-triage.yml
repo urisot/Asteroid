@@ -1,0 +1,59 @@
+name: Issue Triage
+
+on:
+  issues:
+    types: [opened, edited]
+
+jobs:
+  triage:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+      id-token: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Analizar issue con Claude
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          claude_args: |
+            --allowed-tools "Bash(gh issue edit:*),Bash(gh issue comment:*),Bash(gh issue view:*),Bash(gh issue list:*),Read,Grep,Glob"
+          prompt: |
+            Eres un formateador de issues de GitHub para un proyecto de juego Asteroids (JavaScript/HTML/CSS vanilla, sin dependencias).
+            Un issue acaba de ser ${{ github.event.action }} con los siguientes detalles:
+            - Número de issue: #${{ github.event.issue.number }}
+            - Título: ${{ github.event.issue.title }}
+            - Cuerpo: ${{ github.event.issue.body }}
+            - Autor: ${{ github.event.issue.user.login }}
+
+            Tus tareas:
+            1. **Agregar labels** según el contenido del issue. Usa únicamente estos labels:
+               - `bug` — algo está roto o se comporta incorrectamente
+               - `enhancement` — solicitud de nueva funcionalidad o mejora
+               - `question` — pide ayuda o una aclaración
+               - `documentation` — la documentación necesita actualizarse
+               - `good first issue` — tarea simple, apta para principiantes
+               - `duplicate` — si parece un problema conocido o repetido
+            2. **Publicar un comentario** en el issue que incluya:
+               - Un resumen breve y amigable de qué trata el issue (1-2 oraciones)
+               - Una sección "Reporte Formateado" con:
+                 - **Tipo**: Bug / Solicitud de funcionalidad / Pregunta / Otro
+                 - **Resumen**: una oración clara que describa el problema o la solicitud
+                 - **Pasos para reproducir** (para bugs): enuméralos si no fueron provistos; si es un bug, pide al usuario que los proporcione
+                 - **Comportamiento esperado** (para bugs): qué debería ocurrir
+                 - **Labels sugeridos**: los labels que aplicaste y por qué
+               - Una nota de cierre agradeciendo al contribuyente
+
+            Si el issue fue editado (${{ github.event.action }} == edited) y ya existe un comentario tuyo anterior, no dupliques el reporte: publica un comentario nuevo solo si el contenido cambió de forma relevante.
+
+            Usa la CLI `gh` para aplicar los labels y publicar el comentario. Comandos de ejemplo:
+              gh issue edit ${{ github.event.issue.number }} --add-label "bug" --repo ${{ github.repository }}
+              gh issue comment ${{ github.event.issue.number }} --body "..." --repo ${{ github.repository }}
+
+            Sé conciso, útil y amigable. No compliques de más la respuesta. Escribe todo en español.
