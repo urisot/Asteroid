@@ -8,8 +8,12 @@ const H = 600;
 // ── Input ─────────────────────────────────────────────────────────────────────
 const keys = {};
 const justPressed = {};
+const repeated = {};
+const typedKeys = []; // teclas escritas mientras se captura la firma (state 'entername')
 
 window.addEventListener('keydown', e => {
+  if (e.repeat) repeated[e.code] = true;
+  if (state === 'entername') typedKeys.push(e.key);
   justPressed[e.code] = !keys[e.code];
   keys[e.code] = true;
   if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code))
@@ -21,6 +25,13 @@ function pressed(code) {
   const val = justPressed[code];
   justPressed[code] = false;
   return val;
+}
+
+// Como pressed(), pero también dispara con la repetición de tecla mantenida (menús).
+function pressedRep(code) {
+  const val = pressed(code) || repeated[code];
+  repeated[code] = false;
+  return !!val;
 }
 
 // Controles táctiles (botones on-screen): alimentan el mismo estado keys/justPressed.
@@ -132,25 +143,121 @@ const RADII  = [0, 16, 30, 50];   // por tamaño 1, 2, 3
 const SPEEDS = [0, 85, 55, 32];   // velocidad base por tamaño
 const POINTS = [0, 100, 50, 20];  // puntos por tamaño
 
-const TRIPLE_SHOT_DURATION = 10;  // segundos que dura el power-up de disparo en abanico
-const TRIPLE_SHOT_DROP_CHANCE = 0.15; // probabilidad de drop por asteroide destruido (hasta que aparezca en el nivel)
-const NOVA_BOMB_DROP_CHANCE = 0.15;   // ítem escaso: baja probabilidad, aparece a lo sumo 1 vez por partida
-const NOVA_BLAST_SPEED  = 480;        // px/s, proyectil de la bomba nova
-const NOVA_BLAST_RADIUS = 9;          // radio visual/colisión del proyectil (bala ancha)
-const NOVA_BLAST_TTL    = 2.2;        // se autodestruye si no impacta nada
+// Constantes de dificultad: `let` porque el menú de configuración las sobrescribe (ver CONFIG_DEFS).
+let TRIPLE_SHOT_DURATION = 10;  // segundos que dura el power-up de disparo en abanico
+let TRIPLE_SHOT_DROP_CHANCE = 0.15; // probabilidad de drop por asteroide destruido (hasta que aparezca en el nivel)
+let NOVA_BOMB_DROP_CHANCE = 0.15;   // ítem escaso: baja probabilidad, aparece a lo sumo 1 vez por partida
+let NOVA_BLAST_SPEED  = 480;        // px/s, proyectil de la bomba nova
+let NOVA_BLAST_RADIUS = 9;          // radio visual/colisión del proyectil (bala ancha)
+let NOVA_BLAST_TTL    = 2.2;        // se autodestruye si no impacta nada
 const NOVA_EXPLOSION_RADIUS = Math.sqrt(0.20 * W * H / Math.PI); // área = 20% del área jugable ≈ 174.9px
-const SHIELD_DURATION   = 10;    // segundos que dura el escudo (o hasta absorber un golpe)
-const SHIELD_DROP_CHANCE = 0.15; // probabilidad de drop por asteroide destruido, solo desde nivel 3
-const SHIELD_MIN_LEVEL  = 3;    // el escudo no puede aparecer antes de este nivel
+let SHIELD_DURATION   = 10;    // segundos que dura el escudo (o hasta absorber un golpe)
+let SHIELD_DROP_CHANCE = 0.15; // probabilidad de drop por asteroide destruido, solo desde nivel 3
+let SHIELD_MIN_LEVEL  = 3;    // el escudo no puede aparecer antes de este nivel
 
-const UFO_MIN_LEVEL       = 3;   // el platillo volador empieza a aparecer desde este nivel
-const UFO_SHOOT_MIN_LEVEL = 3;   // desde este nivel el platillo también dispara
-const UFO_SPAWN_CHANCE    = 0.08; // probabilidad de spawn por asteroide destruido, solo si no hay otro activo
-const UFO_POINTS          = 200; // puntos base; se otorgan x3 (600) solo al destruirlo por completo
-const UFO_SPEED           = 70;  // px/s, movimiento similar a un asteroide
+let UFO_MIN_LEVEL       = 3;   // el platillo volador empieza a aparecer desde este nivel
+let UFO_SHOOT_MIN_LEVEL = 3;   // desde este nivel el platillo también dispara
+let UFO_SPAWN_CHANCE    = 0.08; // probabilidad de spawn por asteroide destruido, solo si no hay otro activo
+let UFO_POINTS          = 200; // puntos base; se otorgan x3 (600) solo al destruirlo por completo
+let UFO_SPEED           = 70;  // px/s, movimiento similar a un asteroide
 const UFO_RADIUS          = 20;
-const UFO_FIRE_INTERVAL   = 1.8; // segundos entre disparos del platillo (nivel >= UFO_SHOOT_MIN_LEVEL)
-const UFO_BULLET_SPEED    = 60; // mitad de la velocidad de bala del jugador (520 / 2)
+let UFO_FIRE_INTERVAL   = 1.8; // segundos entre disparos del platillo (nivel >= UFO_SHOOT_MIN_LEVEL)
+let UFO_BULLET_SPEED    = 60; // mitad de la velocidad de bala del jugador (520 / 2)
+
+// ── Configuración y puntuaciones persistentes (localStorage) ──────────────────
+const CONFIG_STORAGE_KEY = 'asteroids-config';
+const SCORES_STORAGE_KEY = 'asteroids-scores';
+const MAX_SCORES = 10;
+
+// def se captura aquí, cuando cada variable aún tiene su valor por defecto.
+const CONFIG_DEFS = [
+  { key: 'TRIPLE_SHOT_DURATION',    label: 'Triple shot: duración (s)',   def: TRIPLE_SHOT_DURATION,    min: 1,   max: 60,   step: 1,    get: () => TRIPLE_SHOT_DURATION,    set: v => { TRIPLE_SHOT_DURATION = v; } },
+  { key: 'TRIPLE_SHOT_DROP_CHANCE', label: 'Triple shot: prob. de drop',  def: TRIPLE_SHOT_DROP_CHANCE, min: 0,   max: 1,    step: 0.01, get: () => TRIPLE_SHOT_DROP_CHANCE, set: v => { TRIPLE_SHOT_DROP_CHANCE = v; } },
+  { key: 'NOVA_BOMB_DROP_CHANCE',   label: 'Bomba nova: prob. de drop',   def: NOVA_BOMB_DROP_CHANCE,   min: 0,   max: 1,    step: 0.01, get: () => NOVA_BOMB_DROP_CHANCE,   set: v => { NOVA_BOMB_DROP_CHANCE = v; } },
+  { key: 'NOVA_BLAST_SPEED',        label: 'Bomba nova: velocidad',       def: NOVA_BLAST_SPEED,        min: 100, max: 1200, step: 20,   get: () => NOVA_BLAST_SPEED,        set: v => { NOVA_BLAST_SPEED = v; } },
+  { key: 'NOVA_BLAST_RADIUS',       label: 'Bomba nova: radio proyectil', def: NOVA_BLAST_RADIUS,       min: 2,   max: 30,   step: 1,    get: () => NOVA_BLAST_RADIUS,       set: v => { NOVA_BLAST_RADIUS = v; } },
+  { key: 'NOVA_BLAST_TTL',          label: 'Bomba nova: vida (s)',        def: NOVA_BLAST_TTL,          min: 0.5, max: 6,    step: 0.1,  get: () => NOVA_BLAST_TTL,          set: v => { NOVA_BLAST_TTL = v; } },
+  { key: 'SHIELD_DURATION',         label: 'Escudo: duración (s)',        def: SHIELD_DURATION,         min: 1,   max: 60,   step: 1,    get: () => SHIELD_DURATION,         set: v => { SHIELD_DURATION = v; } },
+  { key: 'SHIELD_DROP_CHANCE',      label: 'Escudo: prob. de drop',       def: SHIELD_DROP_CHANCE,      min: 0,   max: 1,    step: 0.01, get: () => SHIELD_DROP_CHANCE,      set: v => { SHIELD_DROP_CHANCE = v; } },
+  { key: 'SHIELD_MIN_LEVEL',        label: 'Escudo: nivel mínimo',        def: SHIELD_MIN_LEVEL,        min: 1,   max: 20,   step: 1,    get: () => SHIELD_MIN_LEVEL,        set: v => { SHIELD_MIN_LEVEL = v; } },
+  { key: 'UFO_MIN_LEVEL',           label: 'Platillo: nivel mínimo',      def: UFO_MIN_LEVEL,           min: 1,   max: 20,   step: 1,    get: () => UFO_MIN_LEVEL,           set: v => { UFO_MIN_LEVEL = v; } },
+  { key: 'UFO_SHOOT_MIN_LEVEL',     label: 'Platillo: nivel disparo',     def: UFO_SHOOT_MIN_LEVEL,     min: 1,   max: 20,   step: 1,    get: () => UFO_SHOOT_MIN_LEVEL,     set: v => { UFO_SHOOT_MIN_LEVEL = v; } },
+  { key: 'UFO_SPAWN_CHANCE',        label: 'Platillo: prob. de spawn',    def: UFO_SPAWN_CHANCE,        min: 0,   max: 1,    step: 0.01, get: () => UFO_SPAWN_CHANCE,        set: v => { UFO_SPAWN_CHANCE = v; } },
+  { key: 'UFO_POINTS',              label: 'Platillo: puntos base',       def: UFO_POINTS,              min: 0,   max: 2000, step: 50,   get: () => UFO_POINTS,              set: v => { UFO_POINTS = v; } },
+  { key: 'UFO_SPEED',               label: 'Platillo: velocidad',         def: UFO_SPEED,               min: 10,  max: 300,  step: 5,    get: () => UFO_SPEED,               set: v => { UFO_SPEED = v; } },
+  { key: 'UFO_FIRE_INTERVAL',       label: 'Platillo: intervalo disparo', def: UFO_FIRE_INTERVAL,       min: 0.3, max: 6,    step: 0.1,  get: () => UFO_FIRE_INTERVAL,       set: v => { UFO_FIRE_INTERVAL = v; } },
+  { key: 'UFO_BULLET_SPEED',        label: 'Platillo: vel. de bala',      def: UFO_BULLET_SPEED,        min: 20,  max: 520,  step: 10,   get: () => UFO_BULLET_SPEED,        set: v => { UFO_BULLET_SPEED = v; } },
+];
+
+function stepDecimals(step) {
+  return step < 1 ? (String(step).split('.')[1] || '').length : 0;
+}
+
+// Ajusta al paso y limita al rango; devuelve def si v no es un número válido.
+function normalizeConfigValue(d, v) {
+  if (typeof v !== 'number' || !Number.isFinite(v)) return d.def;
+  const clamped = Math.min(d.max, Math.max(d.min, v));
+  return Number((Math.round(clamped / d.step) * d.step).toFixed(stepDecimals(d.step)));
+}
+
+function saveConfig() {
+  const obj = {};
+  for (const d of CONFIG_DEFS) obj[d.key] = d.get();
+  try { localStorage.setItem(CONFIG_STORAGE_KEY, JSON.stringify(obj)); } catch (e) { /* almacenamiento no disponible */ }
+}
+
+function loadConfig() {
+  let obj = {};
+  try {
+    const parsed = JSON.parse(localStorage.getItem(CONFIG_STORAGE_KEY));
+    if (parsed && typeof parsed === 'object') obj = parsed;
+  } catch (e) { /* JSON corrupto o sin acceso: se usan los valores por defecto */ }
+  for (const d of CONFIG_DEFS) d.set(normalizeConfigValue(d, obj[d.key]));
+}
+
+const NAME_LENGTH = 3;
+const NAME_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+
+// Firma: solo A-Z y 0-9, mayúsculas, máximo NAME_LENGTH caracteres.
+function sanitizeName(name) {
+  return String(name || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, NAME_LENGTH);
+}
+
+function loadScores() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(SCORES_STORAGE_KEY));
+    if (Array.isArray(parsed)) {
+      return parsed
+        .filter(s => s && Number.isFinite(s.score))
+        .map(s => ({ score: s.score, date: s.date, name: sanitizeName(s.name) }))
+        .sort((a, b) => b.score - a.score)
+        .slice(0, MAX_SCORES);
+    }
+  } catch (e) { /* se ignora */ }
+  return [];
+}
+
+function qualifiesForTop(value) {
+  if (value <= 0) return false;
+  const scores = loadScores();
+  return scores.length < MAX_SCORES || value > scores[scores.length - 1].score;
+}
+
+// Guarda el puntaje si entra al top 10. Devuelve la posición (1-10) o 0 si no calificó.
+function saveScore(value, name) {
+  if (!qualifiesForTop(value)) return 0;
+  const scores = loadScores();
+  const entry = { score: value, date: new Date().toISOString(), name: sanitizeName(name) };
+  // Empates: el puntaje más antiguo conserva la mejor posición.
+  let idx = scores.findIndex(s => s.score < value);
+  if (idx === -1) idx = scores.length;
+  scores.splice(idx, 0, entry);
+  scores.length = Math.min(scores.length, MAX_SCORES);
+  try { localStorage.setItem(SCORES_STORAGE_KEY, JSON.stringify(scores)); } catch (e) { /* se ignora */ }
+  return idx + 1;
+}
+
+loadConfig();
 
 // ── Proyectil de la bomba nova ─────────────────────────────────────────────────
 class NovaBlast {
@@ -609,8 +716,14 @@ class UFO {
 // ── Estado del juego ──────────────────────────────────────────────────────────
 let ship, bullets, asteroids, particles, powerUps, novaPickups, novaBlasts, shieldPickups, ufos, ufoBullets;
 let score, lives, level;
-let state;      // 'playing' | 'dead' | 'gameover'
+let state = 'menu';      // 'menu' | 'scores' | 'settings' | 'playing' | 'dead' | 'gameover'
 let deadTimer;
+let menuIndex = 0;       // opción resaltada en el menú / pantalla de configuración
+let lastRank = 0;        // posición registrada en el top 10 (se resalta en la tabla; 0 = ninguna)
+let canRegister = false; // la partida terminada califica al top 10 y falta registrar la firma
+let nameChars = [];      // firma en captura
+let nameSlot = 0;        // posición de la firma que se edita
+const MENU_ITEMS = ['1. INICIAR JUEGO', '2. MEJORES PUNTUACIONES', '3. CONFIGURACIONES'];
 let powerUpSpawnedThisLevel;  // triple shot: garantizado al menos 1 vez por nivel
 let novaBombSpawned;          // bomba nova: ítem escaso, a lo sumo 1 vez por partida
 let shieldSpawnedThisLevel;   // escudo: garantizado al menos 1 vez por nivel, desde nivel 3
@@ -714,6 +827,7 @@ function killShip() {
   ufoBullets.forEach(p => p.dead = true);
   lives--;
   if (lives <= 0) {
+    canRegister = qualifiesForTop(score);
     state = 'gameover';
   } else {
     state     = 'dead';
@@ -721,10 +835,124 @@ function killShip() {
   }
 }
 
+// ── Menús ─────────────────────────────────────────────────────────────────────
+// Las teclas pulsadas durante la partida quedan marcadas en justPressed; se limpian al entrar al menú.
+function clearPressed() {
+  for (const k in justPressed) justPressed[k] = false;
+  for (const k in repeated) repeated[k] = false;
+}
+
+function goMenu() {
+  clearPressed();
+  state = 'menu';
+  menuIndex = 0;
+}
+
+function startGame() {
+  lastRank = 0;
+  canRegister = false;
+  initGame();
+}
+
+function startNameEntry() {
+  clearPressed();
+  typedKeys.length = 0;
+  nameChars = Array(NAME_LENGTH).fill('A');
+  nameSlot = 0;
+  state = 'entername';
+}
+
+// Captura de firma estilo arcade: ↑/↓ cambia la letra, ←/→ cambia de casilla, o se escribe directo.
+function updateNameEntry() {
+  const cycle = (pressedRep('ArrowUp') ? 1 : 0) - (pressedRep('ArrowDown') ? 1 : 0);
+  if (cycle) {
+    const i = NAME_CHARS.indexOf(nameChars[nameSlot]);
+    nameChars[nameSlot] = NAME_CHARS[(i + cycle + NAME_CHARS.length) % NAME_CHARS.length];
+  }
+  if (pressedRep('ArrowLeft'))  nameSlot = Math.max(0, nameSlot - 1);
+  if (pressedRep('ArrowRight')) nameSlot = Math.min(NAME_LENGTH - 1, nameSlot + 1);
+
+  for (const key of typedKeys.splice(0)) {
+    if (key === 'Backspace') {
+      nameSlot = Math.max(0, nameSlot - 1);
+    } else if (/^[a-zA-Z0-9]$/.test(key)) {
+      nameChars[nameSlot] = key.toUpperCase();
+      nameSlot = Math.min(NAME_LENGTH - 1, nameSlot + 1);
+    }
+  }
+
+  if (pressed('Enter') || pressed('Space')) {
+    lastRank = saveScore(score, nameChars.join(''));
+    canRegister = false;
+    clearPressed();
+    state = 'scores';
+  }
+}
+
+function updateMenu() {
+  if (pressedRep('ArrowUp'))   menuIndex = (menuIndex + MENU_ITEMS.length - 1) % MENU_ITEMS.length;
+  if (pressedRep('ArrowDown')) menuIndex = (menuIndex + 1) % MENU_ITEMS.length;
+  ['Digit1', 'Digit2', 'Digit3'].forEach((code, i) => {
+    if (pressed(code)) { menuIndex = i; selectMenu(); }
+  });
+  if (pressed('Enter') || pressed('Space')) selectMenu();
+}
+
+function selectMenu() {
+  if (menuIndex === 0) startGame();
+  else if (menuIndex === 1) state = 'scores';
+  else { state = 'settings'; menuIndex = 0; }
+}
+
+function updateScores() {
+  if (pressed('Escape') || pressed('Enter') || pressed('Space')) {
+    lastRank = 0;
+    goMenu();
+  }
+}
+
+// Filas de configuración: una por constante + "restablecer" + "volver".
+function updateSettings() {
+  const rows = CONFIG_DEFS.length + 2;
+  if (pressedRep('ArrowUp'))   menuIndex = (menuIndex + rows - 1) % rows;
+  if (pressedRep('ArrowDown')) menuIndex = (menuIndex + 1) % rows;
+  if (pressed('Escape')) { goMenu(); return; }
+
+  const d = CONFIG_DEFS[menuIndex];
+  if (d) {
+    const dir = (pressedRep('ArrowRight') ? 1 : 0) - (pressedRep('ArrowLeft') ? 1 : 0);
+    if (dir) {
+      d.set(normalizeConfigValue(d, d.get() + dir * d.step));
+      saveConfig();
+    }
+  } else if (pressed('Enter') || pressed('Space')) {
+    if (menuIndex === CONFIG_DEFS.length) {
+      CONFIG_DEFS.forEach(c => c.set(c.def));
+      saveConfig();
+    } else {
+      goMenu();
+    }
+  }
+}
+
 // ── Update ────────────────────────────────────────────────────────────────────
 function update(dt) {
+  if (state === 'menu')     { updateMenu();     return; }
+  if (state === 'scores')   { updateScores();   return; }
+  if (state === 'settings') { updateSettings(); return; }
+  if (state === 'entername') {
+    if (pressed('Escape')) goMenu(); // omite el registro
+    else updateNameEntry();
+    return;
+  }
+
+  if (pressed('Escape')) { goMenu(); return; } // abandona la partida (no guarda puntaje)
+
   if (state === 'gameover') {
-    if (pressed('Space')) initGame();
+    if (pressed('Space')) {
+      if (canRegister) startNameEntry();
+      else goMenu();
+    }
     particles.forEach(p => p.update(dt));
     particles = particles.filter(p => !p.dead);
     return;
@@ -997,9 +1225,124 @@ function drawOverlay(title, sub) {
   ctx.fillText(sub, W / 2, H / 2 + 22);
 }
 
+function drawMenuScreens() {
+  ctx.textAlign = 'center';
+  ctx.fillStyle = C().fg;
+
+  if (state === 'menu') {
+    ctx.font = 'bold 56px monospace';
+    ctx.fillText('ASTEROIDS', W / 2, 150);
+    ctx.font = '22px monospace';
+    MENU_ITEMS.forEach((item, i) => {
+      ctx.fillStyle = i === menuIndex ? C().cyan : C().fg;
+      ctx.fillText(i === menuIndex ? `> ${item} <` : item, W / 2, 260 + i * 50);
+    });
+    ctx.font = '14px monospace';
+    ctx.fillStyle = C().dim;
+    ctx.fillText('↑ ↓ / 1 2 3 PARA ELEGIR   —   ENTER O ESPACIO PARA ACEPTAR', W / 2, H - 40);
+  } else if (state === 'scores') {
+    const scores = loadScores();
+    ctx.font = 'bold 34px monospace';
+    ctx.fillText('MEJORES PUNTUACIONES', W / 2, 70);
+    ctx.font = '20px monospace';
+    if (scores.length === 0) {
+      ctx.fillStyle = C().dim;
+      ctx.fillText('Aún no hay puntuaciones', W / 2, H / 2);
+    }
+    if (scores.length > 0) {
+      ctx.font = '14px monospace';
+      ctx.fillStyle = C().dim;
+      ctx.textAlign = 'left';
+      ctx.fillText('POS', 130, 110);
+      ctx.textAlign = 'right';
+      ctx.fillText('PUNTOS', 340, 110);
+      ctx.textAlign = 'left';
+      ctx.fillText('FECHA', 400, 110);
+      ctx.fillText('FIRMA', 600, 110);
+      ctx.font = '20px monospace';
+    }
+    scores.forEach((s, i) => {
+      const y = 145 + i * 37;
+      ctx.fillStyle = i + 1 === lastRank ? C().cyan : C().fg;
+      ctx.textAlign = 'left';
+      ctx.fillText(`${i + 1}`, 130, y);
+      ctx.textAlign = 'right';
+      ctx.fillText(String(s.score), 340, y);
+      ctx.textAlign = 'left';
+      const date = new Date(s.date);
+      ctx.fillText(isNaN(date) ? '--' : date.toLocaleDateString(), 400, y);
+      ctx.fillText(s.name || '---', 600, y);
+    });
+    ctx.textAlign = 'center';
+    ctx.font = '14px monospace';
+    ctx.fillStyle = C().dim;
+    ctx.fillText('ESC / ENTER / ESPACIO PARA VOLVER', W / 2, H - 30);
+  } else if (state === 'settings') {
+    ctx.font = 'bold 30px monospace';
+    ctx.fillText('CONFIGURACIONES', W / 2, 44);
+    ctx.font = '15px monospace';
+    const rowH = 25;
+    const top = 82;
+    CONFIG_DEFS.forEach((d, i) => {
+      const y = top + i * rowH;
+      const sel = i === menuIndex;
+      const changed = d.get() !== d.def;
+      ctx.fillStyle = sel ? C().cyan : C().fg;
+      ctx.textAlign = 'left';
+      ctx.fillText(`${sel ? '> ' : '  '}${d.label}`, 110, y);
+      ctx.textAlign = 'right';
+      const v = d.get().toFixed(stepDecimals(d.step));
+      ctx.fillText(sel ? `◀ ${v} ▶` : `${v}${changed ? ' *' : ''}`, 690, y);
+    });
+    ctx.textAlign = 'left';
+    [['RESTABLECER VALORES', CONFIG_DEFS.length], ['VOLVER', CONFIG_DEFS.length + 1]].forEach(([label, idx], j) => {
+      const sel = idx === menuIndex;
+      ctx.fillStyle = sel ? C().cyan : C().fg;
+      ctx.fillText(`${sel ? '> ' : '  '}${label}`, 110, top + (CONFIG_DEFS.length + j) * rowH + 6);
+    });
+    ctx.textAlign = 'center';
+    ctx.font = '13px monospace';
+    ctx.fillStyle = C().dim;
+    ctx.fillText('↑ ↓ ELEGIR   ◀ ▶ CAMBIAR   ENTER ACEPTAR   ESC VOLVER   (* = modificado)', W / 2, H - 14);
+  }
+}
+
+function drawNameEntry() {
+  ctx.textAlign = 'center';
+  ctx.fillStyle = C().fg;
+  ctx.font = 'bold 40px monospace';
+  ctx.fillText('¡NUEVO TOP 10!', W / 2, 150);
+  ctx.font = '22px monospace';
+  ctx.fillText(`PUNTAJE: ${score}`, W / 2, 200);
+  ctx.fillStyle = C().dim;
+  ctx.font = '18px monospace';
+  ctx.fillText('ESCRIBE TU FIRMA (3 CARACTERES: A-Z, 0-9)', W / 2, 260);
+
+  ctx.font = 'bold 64px monospace';
+  nameChars.forEach((ch, i) => {
+    const x = W / 2 + (i - 1) * 70;
+    ctx.fillStyle = i === nameSlot ? C().cyan : C().fg;
+    ctx.fillText(ch, x, 350);
+    ctx.fillRect(x - 24, 366, 48, i === nameSlot ? 4 : 2);
+  });
+
+  ctx.font = '14px monospace';
+  ctx.fillStyle = C().dim;
+  ctx.fillText('↑ ↓ CAMBIAR LETRA   ◀ ▶ CASILLA   ENTER / ESPACIO GUARDAR   ESC OMITIR', W / 2, H - 40);
+}
+
 function draw() {
   ctx.fillStyle = C().bg;
   ctx.fillRect(0, 0, W, H);
+
+  if (state === 'menu' || state === 'scores' || state === 'settings') {
+    drawMenuScreens();
+    return;
+  }
+  if (state === 'entername') {
+    drawNameEntry();
+    return;
+  }
 
   particles.forEach(p => p.draw());
   asteroids.forEach(a => a.draw());
@@ -1014,8 +1357,13 @@ function draw() {
 
   drawHUD();
 
-  if (state === 'gameover')
-    drawOverlay('GAME OVER', `PUNTAJE: ${score}   —   ESPACIO PARA REINICIAR`);
+  if (state === 'gameover') {
+    drawOverlay('GAME OVER', `PUNTAJE: ${score}   —   ESPACIO PARA ${canRegister ? 'CONTINUAR' : 'IR AL MENÚ'}`);
+    if (canRegister) {
+      ctx.fillStyle = C().cyan;
+      ctx.fillText('¡ENTRAS AL TOP 10! REGISTRA TU FIRMA', W / 2, H / 2 + 56);
+    }
+  }
 }
 
 // ── Loop principal ────────────────────────────────────────────────────────────
@@ -1029,5 +1377,4 @@ function loop(ts) {
   requestAnimationFrame(loop);
 }
 
-initGame();
 requestAnimationFrame(loop);
