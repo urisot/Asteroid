@@ -73,6 +73,8 @@ const THEMES = {
     orange: 'rgba(255,130,0,0.85)',
     shieldRing: 'rgba(0,255,0,0.8)',
     novaRing: 'rgba(255,0,255,0.5)',
+    star: '#ffdd00',
+    starRing: 'rgba(255,221,0,0.8)',
   },
   light: {
     bg: '#eef0f2',
@@ -86,6 +88,8 @@ const THEMES = {
     orange: 'rgba(200,90,0,0.85)',
     shieldRing: 'rgba(10,138,42,0.8)',
     novaRing: 'rgba(170,0,153,0.5)',
+    star: '#b38600',
+    starRing: 'rgba(179,134,0,0.8)',
   },
 };
 
@@ -154,6 +158,8 @@ const NOVA_EXPLOSION_RADIUS = Math.sqrt(0.20 * W * H / Math.PI); // área = 20% 
 let SHIELD_DURATION   = 10;    // segundos que dura el escudo (o hasta absorber un golpe)
 let SHIELD_DROP_CHANCE = 0.15; // probabilidad de drop por asteroide destruido, solo desde nivel 3
 let SHIELD_MIN_LEVEL  = 3;    // el escudo no puede aparecer antes de este nivel
+let STAR_DURATION    = 10;   // segundos de inmunidad total (asteroides, platillo y sus disparos)
+let STAR_DROP_CHANCE = 0.12; // probabilidad de drop por asteroide destruido (hasta que aparezca en el nivel)
 
 let UFO_MIN_LEVEL       = 3;   // el platillo volador empieza a aparecer desde este nivel
 let UFO_SHOOT_MIN_LEVEL = 3;   // desde este nivel el platillo también dispara
@@ -180,6 +186,8 @@ const CONFIG_DEFS = [
   { key: 'SHIELD_DURATION',         label: 'Escudo: duración (s)',        def: SHIELD_DURATION,         min: 1,   max: 60,   step: 1,    get: () => SHIELD_DURATION,         set: v => { SHIELD_DURATION = v; } },
   { key: 'SHIELD_DROP_CHANCE',      label: 'Escudo: prob. de drop',       def: SHIELD_DROP_CHANCE,      min: 0,   max: 1,    step: 0.01, get: () => SHIELD_DROP_CHANCE,      set: v => { SHIELD_DROP_CHANCE = v; } },
   { key: 'SHIELD_MIN_LEVEL',        label: 'Escudo: nivel mínimo',        def: SHIELD_MIN_LEVEL,        min: 1,   max: 20,   step: 1,    get: () => SHIELD_MIN_LEVEL,        set: v => { SHIELD_MIN_LEVEL = v; } },
+  { key: 'STAR_DURATION',           label: 'Estrella: duración (s)',      def: STAR_DURATION,           min: 1,   max: 60,   step: 1,    get: () => STAR_DURATION,           set: v => { STAR_DURATION = v; } },
+  { key: 'STAR_DROP_CHANCE',        label: 'Estrella: prob. de drop',     def: STAR_DROP_CHANCE,        min: 0,   max: 1,    step: 0.01, get: () => STAR_DROP_CHANCE,        set: v => { STAR_DROP_CHANCE = v; } },
   { key: 'UFO_MIN_LEVEL',           label: 'Platillo: nivel mínimo',      def: UFO_MIN_LEVEL,           min: 1,   max: 20,   step: 1,    get: () => UFO_MIN_LEVEL,           set: v => { UFO_MIN_LEVEL = v; } },
   { key: 'UFO_SHOOT_MIN_LEVEL',     label: 'Platillo: nivel disparo',     def: UFO_SHOOT_MIN_LEVEL,     min: 1,   max: 20,   step: 1,    get: () => UFO_SHOOT_MIN_LEVEL,     set: v => { UFO_SHOOT_MIN_LEVEL = v; } },
   { key: 'UFO_SPAWN_CHANCE',        label: 'Platillo: prob. de spawn',    def: UFO_SPAWN_CHANCE,        min: 0,   max: 1,    step: 0.01, get: () => UFO_SPAWN_CHANCE,        set: v => { UFO_SPAWN_CHANCE = v; } },
@@ -364,6 +372,7 @@ class Ship {
     this.tripleShot    = 0;
     this.novaBombs     = 0;
     this.shield        = 0;
+    this.starPower     = 0;
     this.dead          = false;
   }
 
@@ -373,6 +382,7 @@ class Ship {
     if (this.shootCooldown > 0) this.shootCooldown -= dt;
     if (this.tripleShot    > 0) this.tripleShot    -= dt;
     if (this.shield        > 0) this.shield        -= dt;
+    if (this.starPower     > 0) this.starPower     -= dt;
 
     const ROT   = 3.5;   // rad/s
     const THRUST = 260;  // px/s²
@@ -447,6 +457,15 @@ class Ship {
       ctx.lineWidth = 2;
       ctx.beginPath();
       ctx.arc(0, 0, this.radius + 8, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    // Anillo de la estrella: inmunidad total temporal
+    if (this.starPower > 0) {
+      ctx.strokeStyle = C().starRing;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(0, 0, this.radius + 13, 0, Math.PI * 2);
       ctx.stroke();
     }
 
@@ -603,6 +622,44 @@ class ShieldPickup {
   }
 }
 
+// ── Estrella luminosa (inmunidad total temporal, similar a la invencibilidad de reaparición) ──
+class StarPickup {
+  constructor(x, y) {
+    this.x = x;
+    this.y = y;
+    this.radius = 10;
+    this.ttl = 8;
+    this.rot = 0;
+    this.dead = false;
+  }
+
+  update(dt) {
+    this.rot += dt * 2.2;
+    this.ttl -= dt;
+    if (this.ttl <= 0) this.dead = true;
+  }
+
+  draw() {
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.rotate(this.rot);
+    ctx.strokeStyle = C().star;
+    ctx.lineWidth = 1.5;
+    const spikes = 5;
+    ctx.beginPath();
+    for (let i = 0; i < spikes * 2; i++) {
+      const r = i % 2 === 0 ? this.radius : this.radius * 0.42;
+      const a = (i / (spikes * 2)) * Math.PI * 2 - Math.PI / 2;
+      const px = Math.cos(a) * r;
+      const py = Math.sin(a) * r;
+      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
 // ── Disparo del platillo volador ────────────────────────────────────────────────
 class UfoBullet {
   constructor(x, y, angle) {
@@ -714,7 +771,7 @@ class UFO {
 }
 
 // ── Estado del juego ──────────────────────────────────────────────────────────
-let ship, bullets, asteroids, particles, powerUps, novaPickups, novaBlasts, shieldPickups, ufos, ufoBullets;
+let ship, bullets, asteroids, particles, powerUps, novaPickups, novaBlasts, shieldPickups, starPickups, ufos, ufoBullets;
 let score, lives, level;
 let state = 'menu';      // 'menu' | 'scores' | 'settings' | 'playing' | 'dead' | 'gameover'
 let deadTimer;
@@ -727,6 +784,7 @@ const MENU_ITEMS = ['1. INICIAR JUEGO', '2. MEJORES PUNTUACIONES', '3. CONFIGURA
 let powerUpSpawnedThisLevel;  // triple shot: garantizado al menos 1 vez por nivel
 let novaBombSpawned;          // bomba nova: ítem escaso, a lo sumo 1 vez por partida
 let shieldSpawnedThisLevel;   // escudo: garantizado al menos 1 vez por nivel, desde nivel 3
+let starSpawnedThisLevel;     // estrella: garantizado al menos 1 vez por nivel
 let lastKillX = W / 2, lastKillY = H / 2; // posición del último asteroide destruido (para el spawn forzado)
 
 function spawnAsteroids(count) {
@@ -750,6 +808,7 @@ function initGame() {
   novaPickups = [];
   novaBlasts  = [];
   shieldPickups = [];
+  starPickups = [];
   ufos        = [];
   ufoBullets  = [];
   score  = 0;
@@ -759,6 +818,7 @@ function initGame() {
   powerUpSpawnedThisLevel = false;
   novaBombSpawned = false;
   shieldSpawnedThisLevel = false;
+  starSpawnedThisLevel = false;
   spawnAsteroids(4);
 }
 
@@ -771,6 +831,7 @@ function nextLevel() {
   ufoBullets = [];
   powerUpSpawnedThisLevel = false;
   shieldSpawnedThisLevel = false;
+  starSpawnedThisLevel = false;
   const savedNovaBombs = ship.novaBombs;
   ship.reset();
   ship.novaBombs = savedNovaBombs; // inventario no se pierde al pasar de nivel
@@ -820,10 +881,12 @@ function killShip() {
   ship.tripleShot = 0;
   ship.novaBombs = 0;
   ship.shield = 0;
+  ship.starPower = 0;
   powerUps.forEach(p => p.dead = true);
   novaPickups.forEach(p => p.dead = true);
   novaBlasts.forEach(p => p.dead = true);
   shieldPickups.forEach(p => p.dead = true);
+  starPickups.forEach(p => p.dead = true);
   ufoBullets.forEach(p => p.dead = true);
   lives--;
   if (lives <= 0) {
@@ -992,6 +1055,7 @@ function update(dt) {
   novaPickups.forEach(p => p.update(dt));
   novaBlasts.forEach(p => p.update(dt));
   shieldPickups.forEach(p => p.update(dt));
+  starPickups.forEach(p => p.update(dt));
   ufos.forEach(u => u.update(dt));
   ufoBullets.forEach(b => b.update(dt));
 
@@ -1001,6 +1065,7 @@ function update(dt) {
   novaPickups   = novaPickups.filter(p => !p.dead);
   novaBlasts    = novaBlasts.filter(p => !p.dead);
   shieldPickups = shieldPickups.filter(p => !p.dead);
+  starPickups   = starPickups.filter(p => !p.dead);
   ufoBullets    = ufoBullets.filter(b => !b.dead);
 
   // Disparo del platillo volador (nivel >= UFO_SHOOT_MIN_LEVEL), apuntando a la nave
@@ -1034,6 +1099,10 @@ function update(dt) {
         if (level >= SHIELD_MIN_LEVEL && !shieldSpawnedThisLevel && Math.random() < SHIELD_DROP_CHANCE) {
           shieldPickups.push(new ShieldPickup(a.x, a.y));
           shieldSpawnedThisLevel = true;
+        }
+        if (!starSpawnedThisLevel && Math.random() < STAR_DROP_CHANCE) {
+          starPickups.push(new StarPickup(a.x, a.y));
+          starSpawnedThisLevel = true;
         }
         if (level >= UFO_MIN_LEVEL && ufos.length === 0 && Math.random() < UFO_SPAWN_CHANCE) {
           ufos.push(new UFO(a.x, a.y));
@@ -1082,9 +1151,14 @@ function update(dt) {
     shieldPickups.push(new ShieldPickup(lastKillX, lastKillY));
     shieldSpawnedThisLevel = true;
   }
+  // Garantía equivalente para la estrella de inmunidad.
+  if (asteroids.length === 0 && !starSpawnedThisLevel) {
+    starPickups.push(new StarPickup(lastKillX, lastKillY));
+    starSpawnedThisLevel = true;
+  }
 
   // Nave vs asteroide
-  if (!ship.dead && ship.invincible <= 0) {
+  if (!ship.dead && ship.invincible <= 0 && ship.starPower <= 0) {
     for (const a of asteroids) {
       if (dist(ship, a) < ship.radius + a.radius * 0.82) {
         if (ship.shield > 0) {
@@ -1103,7 +1177,7 @@ function update(dt) {
 
   // Nave vs platillo volador: mismo trato que un asteroide (respeta invencibilidad y escudo),
   // y además el platillo recibe daño (cuenta como impacto para su secuencia de 3 golpes).
-  if (!ship.dead && ship.invincible <= 0) {
+  if (!ship.dead && ship.invincible <= 0 && ship.starPower <= 0) {
     for (const u of ufos) {
       if (!u.dead && dist(ship, u) < ship.radius + u.radius * 0.8) {
         applyUfoHit(u);
@@ -1119,7 +1193,7 @@ function update(dt) {
   ufos = ufos.filter(u => !u.dead);
 
   // Nave vs disparo del platillo volador
-  if (!ship.dead && ship.invincible <= 0) {
+  if (!ship.dead && ship.invincible <= 0 && ship.starPower <= 0) {
     for (const b of ufoBullets) {
       if (!b.dead && dist(ship, b) < ship.radius + b.radius) {
         b.dead = true;
@@ -1160,6 +1234,15 @@ function update(dt) {
     }
   }
   shieldPickups = shieldPickups.filter(p => !p.dead);
+
+  // Nave vs estrella
+  for (const p of starPickups) {
+    if (!p.dead && dist(ship, p) < ship.radius + p.radius) {
+      p.dead = true;
+      ship.starPower = STAR_DURATION;
+    }
+  }
+  starPickups = starPickups.filter(p => !p.dead);
 
   // Nivel completado
   if (asteroids.length === 0) nextLevel();
@@ -1211,6 +1294,11 @@ function drawHUD() {
   if (ship.shield > 0) {
     ctx.fillStyle = C().green;
     ctx.fillText(`ESCUDO ${ship.shield.toFixed(1)}s`, W / 2, buffY);
+    buffY += 20;
+  }
+  if (ship.starPower > 0) {
+    ctx.fillStyle = C().star;
+    ctx.fillText(`ESTRELLA ${ship.starPower.toFixed(1)}s`, W / 2, buffY);
     buffY += 20;
   }
 }
@@ -1350,6 +1438,7 @@ function draw() {
   powerUps.forEach(p => p.draw());
   novaPickups.forEach(p => p.draw());
   shieldPickups.forEach(p => p.draw());
+  starPickups.forEach(p => p.draw());
   bullets.forEach(b => b.draw());
   ufoBullets.forEach(b => b.draw());
   novaBlasts.forEach(p => p.draw());
