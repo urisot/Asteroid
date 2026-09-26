@@ -47,6 +47,58 @@ const dist  = (a, b)   => Math.hypot(a.x - b.x, a.y - b.y);
 const rand  = (min, max) => min + Math.random() * (max - min);
 const randInt = (min, max) => Math.floor(rand(min, max + 1));
 
+// ── Tema (claro/oscuro) ──────────────────────────────────────────────────────────
+const THEME_STORAGE_KEY = 'asteroids-theme';
+const THEMES = {
+  dark: {
+    bg: '#000',
+    fg: '#fff',
+    dim: 'rgba(255,255,255,0.65)',
+    particleRgb: '255,255,255',
+    cyan: '#0ff',
+    magenta: '#f0f',
+    green: '#0f0',
+    red: '#f55',
+    orange: 'rgba(255,130,0,0.85)',
+    shieldRing: 'rgba(0,255,0,0.8)',
+    novaRing: 'rgba(255,0,255,0.5)',
+  },
+  light: {
+    bg: '#eef0f2',
+    fg: '#111',
+    dim: 'rgba(0,0,0,0.6)',
+    particleRgb: '0,0,0',
+    cyan: '#0088aa',
+    magenta: '#aa0099',
+    green: '#0a8a2a',
+    red: '#cc2222',
+    orange: 'rgba(200,90,0,0.85)',
+    shieldRing: 'rgba(10,138,42,0.8)',
+    novaRing: 'rgba(170,0,153,0.5)',
+  },
+};
+
+let theme = localStorage.getItem(THEME_STORAGE_KEY) === 'light' ? 'light' : 'dark';
+const C = () => THEMES[theme];
+
+const themeToggle = document.getElementById('theme-toggle');
+
+function applyTheme() {
+  document.body.classList.toggle('light-mode', theme === 'light');
+  if (themeToggle) themeToggle.checked = theme === 'light';
+}
+
+function setTheme(next) {
+  theme = next;
+  localStorage.setItem(THEME_STORAGE_KEY, theme);
+  applyTheme();
+}
+
+if (themeToggle) {
+  themeToggle.addEventListener('change', () => setTheme(themeToggle.checked ? 'light' : 'dark'));
+}
+applyTheme();
+
 // ── Bullet ────────────────────────────────────────────────────────────────────
 class Bullet {
   constructor(x, y, angle) {
@@ -68,7 +120,7 @@ class Bullet {
   }
 
   draw() {
-    ctx.fillStyle = '#fff';
+    ctx.fillStyle = C().fg;
     ctx.beginPath();
     ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
     ctx.fill();
@@ -120,11 +172,11 @@ class NovaBlast {
   }
 
   draw() {
-    ctx.fillStyle = '#f0f';
+    ctx.fillStyle = C().magenta;
     ctx.beginPath();
     ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
     ctx.fill();
-    ctx.strokeStyle = 'rgba(255,0,255,0.5)';
+    ctx.strokeStyle = C().novaRing;
     ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.arc(this.x, this.y, this.radius + 3, 0, Math.PI * 2);
@@ -175,7 +227,7 @@ class Asteroid {
     ctx.save();
     ctx.translate(this.x, this.y);
     ctx.rotate(this.rot);
-    ctx.strokeStyle = '#fff';
+    ctx.strokeStyle = C().fg;
     ctx.lineWidth   = 1.5;
     ctx.lineJoin    = 'round';
     ctx.beginPath();
@@ -259,7 +311,7 @@ class Ship {
     ctx.save();
     ctx.translate(this.x, this.y);
     ctx.rotate(this.angle);
-    ctx.strokeStyle = this.tripleShot > 0 ? '#0ff' : '#fff';
+    ctx.strokeStyle = this.tripleShot > 0 ? C().cyan : C().fg;
     ctx.lineWidth   = 1.5;
     ctx.lineJoin    = 'round';
 
@@ -278,13 +330,13 @@ class Ship {
       ctx.moveTo(-8, -4);
       ctx.lineTo(-8 - rand(6, 14), 0);
       ctx.lineTo(-8,  4);
-      ctx.strokeStyle = 'rgba(255, 130, 0, 0.85)';
+      ctx.strokeStyle = C().orange;
       ctx.stroke();
     }
 
     // Anillo de energía del escudo
     if (this.shield > 0) {
-      ctx.strokeStyle = 'rgba(0, 255, 0, 0.8)';
+      ctx.strokeStyle = C().shieldRing;
       ctx.lineWidth = 2;
       ctx.beginPath();
       ctx.arc(0, 0, this.radius + 8, 0, Math.PI * 2);
@@ -318,7 +370,7 @@ class Particle {
 
   draw() {
     const alpha = this.ttl / this.life;
-    ctx.strokeStyle = `rgba(255,255,255,${alpha.toFixed(2)})`;
+    ctx.strokeStyle = `rgba(${C().particleRgb},${alpha.toFixed(2)})`;
     ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.moveTo(this.x, this.y);
@@ -348,7 +400,7 @@ class PowerUp {
     ctx.save();
     ctx.translate(this.x, this.y);
     ctx.rotate(this.rot);
-    ctx.strokeStyle = '#0ff';
+    ctx.strokeStyle = C().cyan;
     ctx.lineWidth = 1.5;
     ctx.beginPath();
     ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
@@ -386,7 +438,7 @@ class NovaBombPickup {
     ctx.save();
     ctx.translate(this.x, this.y);
     ctx.rotate(this.rot);
-    ctx.strokeStyle = '#f0f';
+    ctx.strokeStyle = C().magenta;
     ctx.lineWidth = 1.5;
     const spikes = 8;
     ctx.beginPath();
@@ -424,7 +476,7 @@ class ShieldPickup {
     ctx.save();
     ctx.translate(this.x, this.y);
     ctx.rotate(this.rot);
-    ctx.strokeStyle = '#0f0';
+    ctx.strokeStyle = C().green;
     ctx.lineWidth = 1.5;
     // Hexágono exterior
     ctx.beginPath();
@@ -464,7 +516,7 @@ class UfoBullet {
   }
 
   draw() {
-    ctx.fillStyle = '#f55';
+    ctx.fillStyle = C().red;
     ctx.beginPath();
     ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
     ctx.fill();
@@ -522,7 +574,7 @@ class UFO {
     ctx.save();
     ctx.translate(this.x, this.y);
     const r = this.radius;
-    ctx.strokeStyle = '#0f0';
+    ctx.strokeStyle = C().green;
     ctx.lineWidth = 1.5;
 
     // Cuerpo (elipse achatada)
@@ -544,7 +596,7 @@ class UFO {
     ctx.stroke();
 
     // Inicial "D"
-    ctx.fillStyle = '#0f0';
+    ctx.fillStyle = C().green;
     ctx.font = 'bold 14px monospace';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
@@ -890,7 +942,7 @@ function drawLifeIcon(x, y) {
   ctx.save();
   ctx.translate(x, y);
   ctx.rotate(-Math.PI / 2);
-  ctx.strokeStyle = '#fff';
+  ctx.strokeStyle = C().fg;
   ctx.lineWidth   = 1.2;
   ctx.lineJoin    = 'round';
   ctx.beginPath();
@@ -904,7 +956,7 @@ function drawLifeIcon(x, y) {
 }
 
 function drawHUD() {
-  ctx.fillStyle = '#fff';
+  ctx.fillStyle = C().fg;
   ctx.font = '15px monospace';
 
   ctx.textAlign = 'left';
@@ -919,17 +971,17 @@ function drawHUD() {
   ctx.textAlign = 'center';
   let buffY = 48;
   if (ship.tripleShot > 0) {
-    ctx.fillStyle = '#0ff';
+    ctx.fillStyle = C().cyan;
     ctx.fillText(`TRIPLE SHOT ${ship.tripleShot.toFixed(1)}s`, W / 2, buffY);
     buffY += 20;
   }
   if (ship.novaBombs > 0) {
-    ctx.fillStyle = '#f0f';
+    ctx.fillStyle = C().magenta;
     ctx.fillText(`BOMBA NOVA x${ship.novaBombs}  [B]`, W / 2, buffY);
     buffY += 20;
   }
   if (ship.shield > 0) {
-    ctx.fillStyle = '#0f0';
+    ctx.fillStyle = C().green;
     ctx.fillText(`ESCUDO ${ship.shield.toFixed(1)}s`, W / 2, buffY);
     buffY += 20;
   }
@@ -937,16 +989,16 @@ function drawHUD() {
 
 function drawOverlay(title, sub) {
   ctx.textAlign   = 'center';
-  ctx.fillStyle   = '#fff';
+  ctx.fillStyle   = C().fg;
   ctx.font        = 'bold 46px monospace';
   ctx.fillText(title, W / 2, H / 2 - 18);
   ctx.font        = '18px monospace';
-  ctx.fillStyle   = 'rgba(255,255,255,0.65)';
+  ctx.fillStyle   = C().dim;
   ctx.fillText(sub, W / 2, H / 2 + 22);
 }
 
 function draw() {
-  ctx.fillStyle = '#000';
+  ctx.fillStyle = C().bg;
   ctx.fillRect(0, 0, W, H);
 
   particles.forEach(p => p.draw());
