@@ -628,7 +628,7 @@ class StarPickup {
     this.x = x;
     this.y = y;
     this.radius = 10;
-    this.ttl = 8;
+    this.ttl = 5;
     this.rot = 0;
     this.dead = false;
   }
@@ -644,6 +644,8 @@ class StarPickup {
     ctx.translate(this.x, this.y);
     ctx.rotate(this.rot);
     ctx.strokeStyle = C().star;
+    ctx.shadowColor = C().star;
+    ctx.shadowBlur = 12;
     ctx.lineWidth = 1.5;
     const spikes = 5;
     ctx.beginPath();
@@ -785,6 +787,7 @@ let powerUpSpawnedThisLevel;  // triple shot: garantizado al menos 1 vez por niv
 let novaBombSpawned;          // bomba nova: ítem escaso, a lo sumo 1 vez por partida
 let shieldSpawnedThisLevel;   // escudo: garantizado al menos 1 vez por nivel, desde nivel 3
 let starSpawnedThisLevel;     // estrella: garantizado al menos 1 vez por nivel
+let ufoSpawnedThisLevel;      // platillo: como máximo 1 vez por nivel
 let lastKillX = W / 2, lastKillY = H / 2; // posición del último asteroide destruido (para el spawn forzado)
 
 function spawnAsteroids(count) {
@@ -819,6 +822,7 @@ function initGame() {
   novaBombSpawned = false;
   shieldSpawnedThisLevel = false;
   starSpawnedThisLevel = false;
+  ufoSpawnedThisLevel = false;
   spawnAsteroids(4);
 }
 
@@ -832,6 +836,7 @@ function nextLevel() {
   powerUpSpawnedThisLevel = false;
   shieldSpawnedThisLevel = false;
   starSpawnedThisLevel = false;
+  ufoSpawnedThisLevel = false;
   const savedNovaBombs = ship.novaBombs;
   ship.reset();
   ship.novaBombs = savedNovaBombs; // inventario no se pierde al pasar de nivel
@@ -998,6 +1003,38 @@ function updateSettings() {
   }
 }
 
+// Destruye un asteroide por impacto (disparo o nave con estrella): puntos, explosión y drops.
+// Devuelve los fragmentos resultantes.
+function destroyAsteroidByHit(a) {
+  a.dead = true;
+  score += POINTS[a.size];
+  explode(a.x, a.y, a.size * 5);
+  const fragments = a.split();
+  lastKillX = a.x;
+  lastKillY = a.y;
+  if (!powerUpSpawnedThisLevel && Math.random() < TRIPLE_SHOT_DROP_CHANCE) {
+    powerUps.push(new PowerUp(a.x, a.y));
+    powerUpSpawnedThisLevel = true;
+  }
+  if (!novaBombSpawned && Math.random() < NOVA_BOMB_DROP_CHANCE) {
+    novaPickups.push(new NovaBombPickup(a.x, a.y));
+    novaBombSpawned = true;
+  }
+  if (level >= SHIELD_MIN_LEVEL && !shieldSpawnedThisLevel && Math.random() < SHIELD_DROP_CHANCE) {
+    shieldPickups.push(new ShieldPickup(a.x, a.y));
+    shieldSpawnedThisLevel = true;
+  }
+  if (!starSpawnedThisLevel && Math.random() < STAR_DROP_CHANCE) {
+    starPickups.push(new StarPickup(a.x, a.y));
+    starSpawnedThisLevel = true;
+  }
+  if (level >= UFO_MIN_LEVEL && ufos.length === 0 && !ufoSpawnedThisLevel && Math.random() < UFO_SPAWN_CHANCE) {
+    ufos.push(new UFO(a.x, a.y));
+    ufoSpawnedThisLevel = true;
+  }
+  return fragments;
+}
+
 // ── Update ────────────────────────────────────────────────────────────────────
 function update(dt) {
   if (state === 'menu')     { updateMenu();     return; }
@@ -1082,31 +1119,7 @@ function update(dt) {
     for (const a of asteroids) {
       if (!a.dead && !b.dead && dist(b, a) < a.radius) {
         b.dead = true;
-        a.dead = true;
-        score += POINTS[a.size];
-        explode(a.x, a.y, a.size * 5);
-        newAsteroids.push(...a.split());
-        lastKillX = a.x;
-        lastKillY = a.y;
-        if (!powerUpSpawnedThisLevel && Math.random() < TRIPLE_SHOT_DROP_CHANCE) {
-          powerUps.push(new PowerUp(a.x, a.y));
-          powerUpSpawnedThisLevel = true;
-        }
-        if (!novaBombSpawned && Math.random() < NOVA_BOMB_DROP_CHANCE) {
-          novaPickups.push(new NovaBombPickup(a.x, a.y));
-          novaBombSpawned = true;
-        }
-        if (level >= SHIELD_MIN_LEVEL && !shieldSpawnedThisLevel && Math.random() < SHIELD_DROP_CHANCE) {
-          shieldPickups.push(new ShieldPickup(a.x, a.y));
-          shieldSpawnedThisLevel = true;
-        }
-        if (!starSpawnedThisLevel && Math.random() < STAR_DROP_CHANCE) {
-          starPickups.push(new StarPickup(a.x, a.y));
-          starSpawnedThisLevel = true;
-        }
-        if (level >= UFO_MIN_LEVEL && ufos.length === 0 && Math.random() < UFO_SPAWN_CHANCE) {
-          ufos.push(new UFO(a.x, a.y));
-        }
+        newAsteroids.push(...destroyAsteroidByHit(a));
       }
     }
   }
@@ -1155,6 +1168,31 @@ function update(dt) {
   if (asteroids.length === 0 && !starSpawnedThisLevel) {
     starPickups.push(new StarPickup(lastKillX, lastKillY));
     starSpawnedThisLevel = true;
+  }
+
+  // Nave con estrella vs asteroide: lo destruye como un disparo normal, sin dañar a la nave
+  if (!ship.dead && ship.starPower > 0) {
+    const fragments = [];
+    for (const a of asteroids) {
+      if (!a.dead && dist(ship, a) < ship.radius + a.radius * 0.82) {
+        fragments.push(...destroyAsteroidByHit(a));
+      }
+    }
+    asteroids = asteroids.filter(a => !a.dead).concat(fragments);
+  }
+
+  // Nave con estrella vs platillo y sus disparos: mismo impacto que una bala, sin dañar a la nave
+  if (!ship.dead && ship.starPower > 0) {
+    for (const u of ufos) {
+      if (!u.dead && dist(ship, u) < ship.radius + u.radius * 0.8) {
+        applyUfoHit(u);
+      }
+    }
+    for (const b of ufoBullets) {
+      if (!b.dead && dist(ship, b) < ship.radius + b.radius) {
+        b.dead = true;
+      }
+    }
   }
 
   // Nave vs asteroide
