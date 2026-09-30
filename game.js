@@ -628,7 +628,7 @@ class StarPickup {
     this.x = x;
     this.y = y;
     this.radius = 10;
-    this.ttl = 8;
+    this.ttl = 5;
     this.rot = 0;
     this.dead = false;
   }
@@ -644,6 +644,8 @@ class StarPickup {
     ctx.translate(this.x, this.y);
     ctx.rotate(this.rot);
     ctx.strokeStyle = C().star;
+    ctx.shadowColor = C().star;
+    ctx.shadowBlur = 12;
     ctx.lineWidth = 1.5;
     const spikes = 5;
     ctx.beginPath();
@@ -785,6 +787,7 @@ let powerUpSpawnedThisLevel;  // triple shot: garantizado al menos 1 vez por niv
 let novaBombSpawned;          // bomba nova: ítem escaso, a lo sumo 1 vez por partida
 let shieldSpawnedThisLevel;   // escudo: garantizado al menos 1 vez por nivel, desde nivel 3
 let starSpawnedThisLevel;     // estrella: garantizado al menos 1 vez por nivel
+let ufoSpawnedThisLevel;      // platillo: como máximo 1 vez por nivel
 let lastKillX = W / 2, lastKillY = H / 2; // posición del último asteroide destruido (para el spawn forzado)
 
 function spawnAsteroids(count) {
@@ -819,6 +822,7 @@ function initGame() {
   novaBombSpawned = false;
   shieldSpawnedThisLevel = false;
   starSpawnedThisLevel = false;
+  ufoSpawnedThisLevel = false;
   spawnAsteroids(4);
 }
 
@@ -832,6 +836,7 @@ function nextLevel() {
   powerUpSpawnedThisLevel = false;
   shieldSpawnedThisLevel = false;
   starSpawnedThisLevel = false;
+  ufoSpawnedThisLevel = false;
   const savedNovaBombs = ship.novaBombs;
   ship.reset();
   ship.novaBombs = savedNovaBombs; // inventario no se pierde al pasar de nivel
@@ -1023,8 +1028,9 @@ function destroyAsteroidByHit(a) {
     starPickups.push(new StarPickup(a.x, a.y));
     starSpawnedThisLevel = true;
   }
-  if (level >= UFO_MIN_LEVEL && ufos.length === 0 && Math.random() < UFO_SPAWN_CHANCE) {
+  if (level >= UFO_MIN_LEVEL && ufos.length === 0 && !ufoSpawnedThisLevel && Math.random() < UFO_SPAWN_CHANCE) {
     ufos.push(new UFO(a.x, a.y));
+    ufoSpawnedThisLevel = true;
   }
   return fragments;
 }
@@ -1173,6 +1179,20 @@ function update(dt) {
       }
     }
     asteroids = asteroids.filter(a => !a.dead).concat(fragments);
+  }
+
+  // Nave con estrella vs platillo y sus disparos: mismo impacto que una bala, sin dañar a la nave
+  if (!ship.dead && ship.starPower > 0) {
+    for (const u of ufos) {
+      if (!u.dead && dist(ship, u) < ship.radius + u.radius * 0.8) {
+        applyUfoHit(u);
+      }
+    }
+    for (const b of ufoBullets) {
+      if (!b.dead && dist(ship, b) < ship.radius + b.radius) {
+        b.dead = true;
+      }
+    }
   }
 
   // Nave vs asteroide
